@@ -4,6 +4,9 @@ use std::{fs::OpenOptions, path::Path, thread::JoinHandle, time::Instant};
 use anyhow::{anyhow, Result};
 use crossbeam::channel::{bounded, Sender, TryRecvError};
 
+#[cfg(test)]
+mod test;
+
 enum Message {
     Exit,
     Write { data: Vec<u8>, waker: Sender<()> },
@@ -30,8 +33,8 @@ impl Logger {
         let (sender, receiver) = bounded(max_buffer / avg_msg_size);
 
         let worker_handler = std::thread::spawn(move || {
-            let mut maxThroughput = 0.;
-            let mut batchSize = Self::START_BATCH_SIZE;
+            let mut last_throughput = 0.;
+            let mut batch_size = Self::START_BATCH_SIZE;
             loop {
                 let mut wakers = vec![];
                 let start = Instant::now();
@@ -39,13 +42,13 @@ impl Logger {
 
                 loop {
                     match receiver.try_recv() {
-                        Ok(Message::Exit) => return (),
+                        Ok(Message::Exit) => return,
                         Err(TryRecvError::Empty) => break,
                         Ok(Message::Write { data, waker }) => {
                             wakers.push(waker);
                             file.write_all(&data).expect("write data failed");
                             writen += data.len();
-                            if writen > batchSize {
+                            if writen > batch_size {
                                 break;
                             }
                         }
@@ -54,12 +57,13 @@ impl Logger {
                 }
                 file.sync_data().expect("sync data failed");
                 let throughput = writen as f64 / start.elapsed().as_secs_f64();
-                if throughput >= maxThroughput {
-                    maxThroughput = throughput;
-                    batchSize *= 2;
-                } else {
-                    batchSize = batchSize * 3 / 4;
+                let errs = (throughput - last_throughput) / last_throughput;
+                if errs >= 0.1 {
+                    batch_size *= 2;
+                } else if errs <= -0.1 {
+                    batch_size = batch_size * 3 / 4;
                 }
+                last_throughput = throughput;
                 for waker in wakers {
                     waker.send(()).expect("Fail to wake log writer")
                 }

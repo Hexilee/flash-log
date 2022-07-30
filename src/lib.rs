@@ -3,13 +3,17 @@ use std::{fs::OpenOptions, path::Path, thread::JoinHandle, time::Instant};
 
 use anyhow::{anyhow, Result};
 use crossbeam::channel::{bounded, Sender, TryRecvError};
+use tokio::sync::oneshot;
 
 #[cfg(test)]
 mod test;
 
 enum Message {
     Exit,
-    Write { data: Vec<u8>, waker: Sender<()> },
+    Write {
+        data: Vec<u8>,
+        waker: oneshot::Sender<()>,
+    },
 }
 
 pub struct Logger {
@@ -76,14 +80,14 @@ impl Logger {
         })
     }
 
-    pub fn write_log(&self, data: &[u8]) -> Result<()> {
-        let (waker, receiver) = bounded(1);
+    pub async fn write_log(&self, data: &[u8]) -> Result<()> {
+        let (waker, receiver) = oneshot::channel();
         let _ = self.sender.send(Message::Write {
             data: data.to_vec(),
             waker,
         });
         receiver
-            .recv()
+            .await
             .map_err(|e| anyhow!("Logger worker thread exit: {}", e))
     }
 

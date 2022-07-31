@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 #[cfg(test)]
 mod test;
 
-enum Message {
+enum IOMessage {
     Exit,
     Write {
         data: Bytes,
@@ -21,9 +21,24 @@ enum Message {
     },
 }
 
+enum WakeMessage {
+    Exit,
+    Wake(Vec<Waker>),
+}
+
+struct Waker(oneshot::Sender<()>);
+
 pub struct Logger {
-    sender: Sender<Message>,
-    worker_handler: Option<JoinHandle<()>>,
+    io_sender: Sender<IOMessage>,
+    io_worker: Option<JoinHandle<()>>,
+    waker_sender: Sender<WakeMessage>,
+    waker_worker: Option<JoinHandle<()>>,
+}
+
+impl Waker {
+    fn wake(self) -> Result<()> {
+        self.0.send(()).map_err(|_| anyhow!("fail to send signal"))
+    }
 }
 
 impl Logger {
@@ -43,8 +58,24 @@ impl Logger {
             .open(path)?;
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
         let avg_msg_size = avg_msg_size_o.unwrap_or(Self::AVG_MSG_SIZE);
-        let (sender, receiver) = channel();
-        let worker_handler = std::thread::spawn(move || {
+        let (io_sender, io_receiver) = channel();
+        let (waker_sender, waker_receiver) = channel::<WakeMessage>();
+        let waker_sender_ref = waker_sender.clone();
+
+        let waker_worker = std::thread::spawn(move || {
+            while let Ok(msg) = waker_receiver.recv() {
+                match msg {
+                    WakeMessage::Exit => break,
+                    WakeMessage::Wake(wakers) => {
+                        for waker in wakers {
+                            waker.wake().expect("wake log writer");
+                        }
+                    }
+                }
+            }
+        });
+
+        let io_worker = std::thread::spawn(move || {
             let mut last_throughput = 0.;
             let mut batch_size = Self::BLOCK_SIZE;
             let mut batch = vec![];
@@ -55,11 +86,11 @@ impl Logger {
                 let mut wakers = vec![];
                 let start = Instant::now();
                 loop {
-                    match receiver.try_recv() {
-                        Ok(Message::Exit) => return,
+                    match io_receiver.try_recv() {
+                        Ok(IOMessage::Exit) => return,
                         Err(TryRecvError::Empty) => break,
-                        Ok(Message::Write { data, waker }) => {
-                            wakers.push(waker);
+                        Ok(IOMessage::Write { data, waker }) => {
+                            wakers.push(Waker(waker));
                             batch.extend_from_slice(&data);
                             if batch.len() + avg_msg_size > batch_size {
                                 break;
@@ -67,6 +98,10 @@ impl Logger {
                         }
                         _ => unreachable!("message sender cannot be dropped"),
                     }
+                }
+
+                if batch.is_empty() {
+                    continue;
                 }
 
                 file.write_all(&batch).expect("write data failed");
@@ -85,30 +120,36 @@ impl Logger {
                 batch_size = blocks * Self::BLOCK_SIZE;
 
                 last_throughput = throughput;
-                for waker in wakers {
-                    waker.send(()).expect("Fail to wake log writer")
-                }
+                waker_sender_ref
+                    .send(WakeMessage::Wake(wakers))
+                    .expect("waker sender cannot be dropped");
             }
         });
 
         Ok(Self {
-            sender,
-            worker_handler: Some(worker_handler),
+            io_sender,
+            io_worker: Some(io_worker),
+            waker_sender,
+            waker_worker: Some(waker_worker),
         })
     }
 
     pub async fn write_log(&self, data: Bytes) -> Result<()> {
         let (waker, receiver) = oneshot::channel();
-        let _ = self.sender.send(Message::Write { data, waker });
+        let _ = self.io_sender.send(IOMessage::Write { data, waker });
         receiver
             .await
-            .map_err(|e| anyhow!("Logger worker thread exit: {}", e))
+            .map_err(|e| anyhow!("logger worker thread exit: {}", e))
     }
 
     pub fn shutdown(&mut self) {
-        if let Some(handler) = self.worker_handler.take() {
-            let _ = self.sender.send(Message::Exit);
-            handler.join().expect("Failed to join logger thread");
+        if let Some(handler) = self.io_worker.take() {
+            let _ = self.io_sender.send(IOMessage::Exit);
+            handler.join().expect("failed to join io worker");
+        }
+        if let Some(handler) = self.waker_worker.take() {
+            let _ = self.waker_sender.send(WakeMessage::Exit);
+            handler.join().expect("failed to join wake worker");
         }
     }
 }

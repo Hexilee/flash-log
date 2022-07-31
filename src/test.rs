@@ -7,7 +7,7 @@ use rand::RngCore;
 
 #[tokio::test]
 async fn test_large_throughput() -> anyhow::Result<()> {
-    let logger = Logger::open("test.log", None, None).unwrap();
+    let logger = Logger::open("test.log", None).unwrap();
     let mut rng = rand::thread_rng();
     let mut data = vec![0; 100];
     let task_size = 10_000_000;

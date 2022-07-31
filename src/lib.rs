@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use tokio::sync::oneshot;
+use bytes::Bytes;
 
 #[cfg(test)]
 mod test;
@@ -15,7 +16,7 @@ mod test;
 enum Message {
     Exit,
     Write {
-        data: Vec<u8>,
+        data: Bytes,
         waker: oneshot::Sender<()>,
     },
 }
@@ -91,10 +92,10 @@ impl Logger {
         })
     }
 
-    pub async fn write_log(&self, data: &[u8]) -> Result<()> {
+    pub async fn write_log(&self, data: Bytes) -> Result<()> {
         let (waker, receiver) = oneshot::channel();
         let _ = self.sender.send(Message::Write {
-            data: data.to_vec(),
+            data,
             waker,
         });
         receiver

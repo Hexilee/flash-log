@@ -80,11 +80,11 @@ impl Logger {
             let mut batch_size = Self::BLOCK_SIZE;
             let mut batch = vec![];
             loop {
+                let start = Instant::now();
                 batch.clear();
                 batch.reserve(batch_size);
 
                 let mut wakers = vec![];
-                let start = Instant::now();
                 loop {
                     match io_receiver.try_recv() {
                         Ok(IOMessage::Exit) => return,
@@ -105,6 +105,9 @@ impl Logger {
                 }
 
                 file.write_all(&batch).expect("write data failed");
+                waker_sender_ref
+                    .send(WakeMessage::Wake(wakers))
+                    .expect("waker sender cannot be dropped");
                 let throughput = batch.len() as f64 / start.elapsed().as_secs_f64();
                 let errs = (throughput - last_throughput) / last_throughput;
                 if errs >= 0.1 {
@@ -118,11 +121,7 @@ impl Logger {
                     blocks += 1;
                 }
                 batch_size = blocks * Self::BLOCK_SIZE;
-
                 last_throughput = throughput;
-                waker_sender_ref
-                    .send(WakeMessage::Wake(wakers))
-                    .expect("waker sender cannot be dropped");
             }
         });
 

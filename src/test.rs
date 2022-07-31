@@ -20,6 +20,8 @@ async fn test_write_data() -> anyhow::Result<()> {
 
 async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     const MSG_SIZE: usize = 100;
+    let guard = pprof::ProfilerGuardBuilder::default().frequency(1000).build()?;
+
     let logger = Logger::open("test.log", None).unwrap();
     let mut rng = rand::thread_rng();
     let mut data = vec![0; MSG_SIZE];
@@ -36,6 +38,12 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
 
     let start = Instant::now();
     let results = futures::future::join_all(tasks).await;
+
+    if let Ok(report) = guard.report().build() {
+        let file = std::fs::File::create("flamegraph.svg")?;
+        report.flamegraph(file)?;
+    };
+
     let total_cost = start.elapsed();
     let avg_latency = results
         .into_iter()

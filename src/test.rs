@@ -1,9 +1,9 @@
-use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use bytes::Bytes;
 use bytesize::ByteSize;
 use rand::RngCore;
-use bytes::Bytes;
 
 use crate::Logger;
 
@@ -22,9 +22,11 @@ async fn test_write_data() -> anyhow::Result<()> {
 
 async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     const MSG_SIZE: usize = 100;
-    let guard = pprof::ProfilerGuardBuilder::default().frequency(1000).build()?;
+    let guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .build()?;
 
-    let logger = Arc::new(Logger::open("test.log", None)?);
+    let logger = Arc::new(Logger::open("test.log", None, None)?);
     let mut rng = rand::thread_rng();
     let mut data = vec![0; MSG_SIZE];
 
@@ -55,7 +57,6 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
         .into_iter()
         .collect::<anyhow::Result<Vec<_>>>()?
         .iter()
-        // .map(|d| d.as_millis())
         .sum::<Duration>()
         / task_size as u32;
     println!(

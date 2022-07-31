@@ -7,8 +7,8 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use tokio::sync::oneshot;
 use bytes::Bytes;
+use tokio::sync::oneshot;
 
 #[cfg(test)]
 mod test;
@@ -29,14 +29,20 @@ pub struct Logger {
 impl Logger {
     const DEFAULT_MAX_BUFFER: usize = 512 * 1024 * 1024;
     const BLOCK_SIZE: usize = 4096;
+    const AVG_MSG_SIZE: usize = 100;
 
-    pub fn open(path: impl AsRef<Path>, max_buffer_o: Option<usize>) -> Result<Self> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        max_buffer_o: Option<usize>,
+        avg_msg_size_o: Option<usize>,
+    ) -> Result<Self> {
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
             .custom_flags(libc::O_DIRECT)
             .open(path)?;
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
+        let avg_msg_size = avg_msg_size_o.unwrap_or(Self::AVG_MSG_SIZE);
         let (sender, receiver) = channel();
         let worker_handler = std::thread::spawn(move || {
             let mut last_throughput = 0.;
@@ -44,15 +50,7 @@ impl Logger {
             let mut batch = vec![];
             loop {
                 batch.clear();
-                if batch.capacity() < batch_size * 2 {
-                    // avoid batch reallocation
-                    let min_buffer_size = max_buffer.min(batch_size * 2);
-                    let mut blocks = min_buffer_size / Self::BLOCK_SIZE;
-                    if min_buffer_size % Self::BLOCK_SIZE > 0 {
-                        blocks += 1;
-                    }
-                    batch.reserve(blocks * Self::BLOCK_SIZE);
-                }
+                batch.reserve(batch_size);
 
                 let mut wakers = vec![];
                 let start = Instant::now();
@@ -63,7 +61,7 @@ impl Logger {
                         Ok(Message::Write { data, waker }) => {
                             wakers.push(waker);
                             batch.extend_from_slice(&data);
-                            if batch.len() > batch_size {
+                            if batch.len() + avg_msg_size > batch_size {
                                 break;
                             }
                         }
@@ -79,6 +77,13 @@ impl Logger {
                 } else if errs <= -0.1 {
                     batch_size = batch_size * 3 / 4;
                 }
+                let min_buffer_size = max_buffer.min(batch_size);
+                let mut blocks = min_buffer_size / Self::BLOCK_SIZE;
+                if min_buffer_size % Self::BLOCK_SIZE > 0 {
+                    blocks += 1;
+                }
+                batch_size = blocks * Self::BLOCK_SIZE;
+
                 last_throughput = throughput;
                 for waker in wakers {
                     waker.send(()).expect("Fail to wake log writer")
@@ -94,10 +99,7 @@ impl Logger {
 
     pub async fn write_log(&self, data: Bytes) -> Result<()> {
         let (waker, receiver) = oneshot::channel();
-        let _ = self.sender.send(Message::Write {
-            data,
-            waker,
-        });
+        let _ = self.sender.send(Message::Write { data, waker });
         receiver
             .await
             .map_err(|e| anyhow!("Logger worker thread exit: {}", e))

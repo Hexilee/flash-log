@@ -1,10 +1,11 @@
 use std::io::Write;
+use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::{
     fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path, thread::JoinHandle, time::Instant,
 };
 
 use anyhow::{anyhow, Result};
-use crossbeam::channel::{unbounded, Sender, TryRecvError};
+// use crossbeam::channel::{unbounded, Sender, TryRecvError};
 use tokio::sync::oneshot;
 
 #[cfg(test)]
@@ -34,7 +35,7 @@ impl Logger {
             .custom_flags(libc::O_DIRECT)
             .open(path)?;
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
-        let (sender, receiver) = unbounded();
+        let (sender, receiver) = channel();
         let worker_handler = std::thread::spawn(move || {
             let mut last_throughput = 0.;
             let mut batch_size = Self::BLOCK_SIZE;

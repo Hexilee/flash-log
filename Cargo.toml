@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-tokio = { version = "1.20", features = ["sync"] }
+tokio = { version = "1.20", features = ["sync", "macros", "rt"] }
 libc = "0.2"
+futures = "0.3"
+bytes = "1.2"
 
 [dev-dependencies]
 rand = "0.8"

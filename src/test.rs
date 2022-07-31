@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use futures::future::join_all;
 use rand::RngCore;
 
 use crate::Logger;
@@ -44,8 +45,22 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
         });
     }
 
+    let mut task_groups = Vec::new();
+    for _ in 0..16 {
+        task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
+    }
+
     let start = Instant::now();
-    let results = futures::future::join_all(tasks).await;
+    let results = join_all(
+        task_groups
+            .into_iter()
+            .map(|group| tokio::spawn(futures::future::join_all(group))),
+    )
+    .await
+    .into_iter()
+    .flatten()
+    .flatten()
+    .collect::<Vec<_>>();
 
     if let Ok(report) = guard.report().build() {
         let file = std::fs::File::create("flamegraph.svg")?;

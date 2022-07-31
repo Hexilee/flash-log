@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
-use std::sync::mpsc::{channel, Sender, TryRecvError};
+use std::sync::mpsc::{sync_channel, SyncSender, TryRecvError};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
@@ -29,9 +29,9 @@ enum WakeMessage {
 struct Waker(oneshot::Sender<()>);
 
 pub struct Logger {
-    io_sender: Sender<IOMessage>,
+    io_sender: SyncSender<IOMessage>,
     io_worker: Option<JoinHandle<()>>,
-    waker_sender: Sender<WakeMessage>,
+    waker_sender: SyncSender<WakeMessage>,
     waker_worker: Option<JoinHandle<()>>,
 }
 
@@ -58,8 +58,8 @@ impl Logger {
             .open(path)?;
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
         let avg_msg_size = avg_msg_size_o.unwrap_or(Self::AVG_MSG_SIZE);
-        let (io_sender, io_receiver) = channel();
-        let (waker_sender, waker_receiver) = channel::<WakeMessage>();
+        let (io_sender, io_receiver) = sync_channel(1000_000);
+        let (waker_sender, waker_receiver) = sync_channel::<WakeMessage>(1000);
         let waker_sender_ref = waker_sender.clone();
 
         let waker_worker = std::thread::spawn(move || {

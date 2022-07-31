@@ -1,18 +1,41 @@
+use std::time::Instant;
+
 use crate::Logger;
 
+use bytesize::ByteSize;
 use rand::RngCore;
 
 #[tokio::test]
-async fn test_single_threads_low_throughput() {
-    let mut logger = Logger::open("test.log", None, None).unwrap();
+async fn test_large_throughput() -> anyhow::Result<()> {
+    let logger = Logger::open("test.log", None, None).unwrap();
     let mut rng = rand::thread_rng();
     let mut data = vec![0; 100];
+    let task_size = 10_000_000;
+
+    let mut tasks = Vec::with_capacity(task_size);
     rng.fill_bytes(&mut data);
-    // for _ in 0..10000 {
-    //     logger.write_log(&data).unwrap();
-    // }
-    // let mut file = File::open("test.log").unwrap();
-    // let mut buf = vec![];
-    // file.read_to_end(&mut buf).unwrap();
-    // assert_eq!(buf.len(), 1024 * 100);
+    for _ in 0..tasks.capacity() {
+        tasks.push(async {
+            let start = Instant::now();
+            logger.write_log(&data).await?;
+            Ok::<_, anyhow::Error>(start.elapsed())
+        });
+    }
+
+    let start = Instant::now();
+    let results = futures::future::join_all(tasks).await;
+    let total_cost = start.elapsed();
+    let avg_latency = results
+        .into_iter()
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .iter()
+        .map(|d| d.as_millis())
+        .sum::<u128>()
+        / task_size as u128;
+    println!(
+        "write {}bytes/s, avg latency: {}ms",
+        ByteSize::b(task_size as u64 * 100 / total_cost.as_secs()),
+        avg_latency
+    );
+    Ok(())
 }

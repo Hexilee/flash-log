@@ -2,7 +2,7 @@ use std::io::Write;
 use std::{fs::OpenOptions, path::Path, thread::JoinHandle, time::Instant};
 
 use anyhow::{anyhow, Result};
-use crossbeam::channel::{bounded, Sender, TryRecvError};
+use crossbeam::channel::{unbounded, Sender, TryRecvError};
 use tokio::sync::oneshot;
 
 #[cfg(test)]
@@ -34,8 +34,7 @@ impl Logger {
         let mut file = OpenOptions::new().append(true).create(true).open(path)?;
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
         let avg_msg_size = avg_msg_size_o.unwrap_or(Self::DEFAULT_AVG_MSG_SIZE);
-        let (sender, receiver) = bounded(max_buffer / avg_msg_size);
-
+        let (sender, receiver) = unbounded();
         let worker_handler = std::thread::spawn(move || {
             let mut last_throughput = 0.;
             let mut batch_size = Self::START_BATCH_SIZE;

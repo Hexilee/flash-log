@@ -1,11 +1,12 @@
+use std::fs::OpenOptions;
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
 use std::sync::mpsc::{channel, Sender, TryRecvError};
-use std::{
-    fs::OpenOptions, os::unix::fs::OpenOptionsExt, path::Path, thread::JoinHandle, time::Instant,
-};
+use std::thread::JoinHandle;
+use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-// use crossbeam::channel::{unbounded, Sender, TryRecvError};
 use tokio::sync::oneshot;
 
 #[cfg(test)]

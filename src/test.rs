@@ -1,12 +1,13 @@
 use std::time::{Duration, Instant};
 
-use crate::Logger;
-
 use bytesize::ByteSize;
 use rand::RngCore;
 
+use crate::Logger;
+
 #[tokio::test]
 async fn test_write_data() -> anyhow::Result<()> {
+    test_throughput_and_latency(1).await?;
     test_throughput_and_latency(10).await?;
     test_throughput_and_latency(100).await?;
     test_throughput_and_latency(1000).await?;

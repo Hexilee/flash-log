@@ -48,34 +48,23 @@ fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
 
     let start = Instant::now();
 
-    let (results, total_cost) = if task_size > 10000 {
-        let mut task_groups = Vec::new();
-        for _ in 0..16 {
-            task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
-        }
-        task_groups.push(tasks);
+    let mut task_groups = Vec::new();
+    for _ in 0..16 {
+        task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
+    }
+    task_groups.push(tasks);
 
-        let ret = rt.block_on(join_all(
-            task_groups
-                .into_iter()
-                .map(|group| rt.spawn(futures::future::join_all(group))),
-        ));
-        let elapsed = start.elapsed();
-        (
-            ret.into_iter()
-                .flatten()
-                .flatten()
-                .collect::<anyhow::Result<Vec<_>>>()?,
-            elapsed,
-        )
-    } else {
-        let ret = rt.block_on(futures::future::join_all(tasks));
-        let elapsed = start.elapsed();
-        (
-            ret.into_iter().collect::<anyhow::Result<Vec<_>>>()?,
-            elapsed,
-        )
-    };
+    let ret = rt.block_on(join_all(
+        task_groups
+            .into_iter()
+            .map(|group| rt.spawn(futures::future::join_all(group))),
+    ));
+    let total_cost = start.elapsed();
+    let results = ret
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
     if let Ok(report) = guard.report().build() {
         let file = std::fs::File::create("flamegraph.svg")?;

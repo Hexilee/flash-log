@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use bytesize::ByteSize;
-use futures::future::join_all;
 use rand::RngCore;
 
 use crate::Logger;
@@ -46,21 +45,22 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     }
 
     let mut task_groups = Vec::new();
-    for _ in 0..16 {
-        task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
+    for _ in 0..256 {
+        task_groups.push(tasks.drain(..task_size / 256).collect::<Vec<_>>());
     }
 
     let start = Instant::now();
-    let results = join_all(
-        task_groups
-            .into_iter()
-            .map(|group| tokio::spawn(futures::future::join_all(group))),
-    )
-    .await
-    .into_iter()
-    .flatten()
-    .flatten()
-    .collect::<Vec<_>>();
+    let results = task_groups
+        .into_iter()
+        .map(|group| {
+            std::thread::spawn(move || {
+                futures::executor::block_on(futures::future::join_all(group))
+            })
+            .join()
+        })
+        .flatten()
+        .flatten()
+        .collect::<anyhow::Result<Vec<_>>>();
 
     if let Ok(report) = guard.report().build() {
         let file = std::fs::File::create("flamegraph.svg")?;
@@ -68,12 +68,7 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     };
 
     let total_cost = start.elapsed();
-    let avg_latency = results
-        .into_iter()
-        .collect::<anyhow::Result<Vec<_>>>()?
-        .iter()
-        .sum::<Duration>()
-        / task_size as u32;
+    let avg_latency = results?.iter().sum::<Duration>() / task_size as u32;
     println!(
         "write {} in {:?}, avg latency: {:?}",
         ByteSize::b((task_size * MSG_SIZE) as u64),

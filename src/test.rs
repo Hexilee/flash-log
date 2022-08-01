@@ -3,24 +3,26 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use futures::future::join_all;
 use rand::RngCore;
 
 use crate::Logger;
 
-#[tokio::test]
-async fn test_write_data() -> anyhow::Result<()> {
-    test_throughput_and_latency(1).await?;
-    test_throughput_and_latency(10).await?;
-    test_throughput_and_latency(100).await?;
-    test_throughput_and_latency(1000).await?;
-    test_throughput_and_latency(10_000).await?;
-    test_throughput_and_latency(100_000).await?;
-    test_throughput_and_latency(1000_000).await?;
-    test_throughput_and_latency(10_000_000).await?;
+#[test]
+fn test_write_data() -> anyhow::Result<()> {
+    test_throughput_and_latency(1)?;
+    test_throughput_and_latency(10)?;
+    test_throughput_and_latency(100)?;
+    test_throughput_and_latency(1000)?;
+    test_throughput_and_latency(10_000)?;
+    test_throughput_and_latency(100_000)?;
+    test_throughput_and_latency(1000_000)?;
+    test_throughput_and_latency(10_000_000)?;
     Ok(())
 }
 
-async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
+fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
     const MSG_SIZE: usize = 100;
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
@@ -44,31 +46,44 @@ async fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
         });
     }
 
-    let mut task_groups = Vec::new();
-    for _ in 0..256 {
-        task_groups.push(tasks.drain(..task_size / 256).collect::<Vec<_>>());
-    }
-
     let start = Instant::now();
-    let results = task_groups
-        .into_iter()
-        .map(|group| {
-            std::thread::spawn(move || {
-                futures::executor::block_on(futures::future::join_all(group))
-            })
-            .join()
-        })
-        .flatten()
-        .flatten()
-        .collect::<anyhow::Result<Vec<_>>>();
+
+    let (results, total_cost) = if task_size > 10000 {
+        let mut task_groups = Vec::new();
+        for _ in 0..16 {
+            task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
+        }
+        task_groups.push(tasks);
+
+        let ret = rt.block_on(join_all(
+            task_groups
+                .into_iter()
+                .map(|group| rt.spawn(futures::future::join_all(group))),
+        ));
+        let elapsed = start.elapsed();
+        (
+            ret.into_iter()
+                .flatten()
+                .flatten()
+                .collect::<anyhow::Result<Vec<_>>>()?,
+            elapsed,
+        )
+    } else {
+        let ret = rt.block_on(futures::future::join_all(tasks));
+        let elapsed = start.elapsed();
+        (
+            ret.into_iter().collect::<anyhow::Result<Vec<_>>>()?,
+            elapsed,
+        )
+    };
 
     if let Ok(report) = guard.report().build() {
         let file = std::fs::File::create("flamegraph.svg")?;
         report.flamegraph(file)?;
     };
 
-    let total_cost = start.elapsed();
-    let avg_latency = results?.iter().sum::<Duration>() / task_size as u32;
+    assert_eq!(task_size, results.len());
+    let avg_latency = results.iter().sum::<Duration>() / results.len() as u32;
     println!(
         "write {} in {:?}, avg latency: {:?}",
         ByteSize::b((task_size * MSG_SIZE) as u64),

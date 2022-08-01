@@ -60,7 +60,7 @@ fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
             .map(|group| rt.spawn(futures::future::join_all(group))),
     ));
     let total_cost = start.elapsed();
-    let results = ret
+    let mut results = ret
         .into_iter()
         .flatten()
         .flatten()
@@ -71,13 +71,19 @@ fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
         report.flamegraph(file)?;
     };
 
+    results.sort();
     assert_eq!(task_size, results.len());
     let avg_latency = results.iter().sum::<Duration>() / results.len() as u32;
+
     println!(
-        "write {} in {:?}, avg latency: {:?}",
+        "write {} in {:?}, avg latency: {:?}. 50%({:?}), 90%({:?}), 95%({:?}), 99%({:?})",
         ByteSize::b((task_size * MSG_SIZE) as u64),
         total_cost,
         avg_latency,
+        results[results.len() / 2],
+        results[results.len() * 9 / 10],
+        results[results.len() * 95 / 100],
+        results[results.len() * 99 / 100],
     );
     Ok(())
 }

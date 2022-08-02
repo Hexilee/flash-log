@@ -44,7 +44,7 @@ impl Waker {
 impl Logger {
     const DEFAULT_MAX_BUFFER: usize = 512 * 1024 * 1024;
     const BLOCK_SIZE: usize = 4096;
-    const AVG_MSG_SIZE: usize = 100;
+    const AVG_MSG_SIZE: usize = 1000;
 
     pub fn open(
         path: impl AsRef<Path>,

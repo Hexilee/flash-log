@@ -19,7 +19,6 @@ fn test_write_data() -> anyhow::Result<()> {
     test_throughput_and_latency(10_000, false)?;
     test_throughput_and_latency(100_000, false)?;
     test_throughput_and_latency(1000_000, false)?;
-    // test_throughput_and_latency(10_000_000)?;
     Ok(())
 }
 
@@ -30,7 +29,7 @@ fn test_throughput_and_latency(task_size: usize, silent: bool) -> anyhow::Result
         .frequency(1000)
         .build()?;
 
-    let logger = Arc::new(Logger::open("test.log", None, Some(1000))?);
+    let logger = Arc::new(Logger::open("test.log", None, None)?);
     let mut rng = rand::thread_rng();
     let mut data = vec![0; MSG_SIZE];
 

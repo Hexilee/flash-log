@@ -15,10 +15,7 @@ mod test;
 
 enum IOMessage {
     Exit,
-    Write {
-        data: Bytes,
-        waker: oneshot::Sender<()>,
-    },
+    Write { data: Bytes, waker: Waker },
 }
 
 enum WakeMessage {
@@ -90,7 +87,7 @@ impl Logger {
                         Ok(IOMessage::Exit) => return,
                         Err(TryRecvError::Empty) => break,
                         Ok(IOMessage::Write { data, waker }) => {
-                            wakers.push(Waker(waker));
+                            wakers.push(waker);
                             batch.extend_from_slice(&data);
                             if batch.len() + avg_msg_size > batch_size {
                                 break;
@@ -135,7 +132,10 @@ impl Logger {
 
     pub async fn write_log(&self, data: Bytes) -> Result<()> {
         let (waker, receiver) = oneshot::channel();
-        let _ = self.io_sender.send(IOMessage::Write { data, waker });
+        let _ = self.io_sender.send(IOMessage::Write {
+            data,
+            waker: Waker(waker),
+        });
         receiver
             .await
             .map_err(|e| anyhow!("logger worker thread exit: {}", e))

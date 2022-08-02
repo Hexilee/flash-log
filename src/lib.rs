@@ -59,7 +59,7 @@ impl Logger {
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
         let avg_msg_size = avg_msg_size_o.unwrap_or(Self::AVG_MSG_SIZE);
         let (io_sender, io_receiver) = sync_channel(1000_000);
-        let (waker_sender, waker_receiver) = sync_channel::<WakeMessage>(1000);
+        let (waker_sender, waker_receiver) = sync_channel::<WakeMessage>(100);
         let waker_sender_ref = waker_sender.clone();
 
         let waker_worker = std::thread::spawn(move || {

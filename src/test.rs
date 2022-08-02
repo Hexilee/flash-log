@@ -37,6 +37,8 @@ fn test_throughput_and_latency(task_size: usize, silent: bool) -> anyhow::Result
     rng.fill_bytes(&mut data);
 
     let bytes = Bytes::from(data);
+
+    // construct tasks
     for _ in 0..tasks.capacity() {
         let data_ref = bytes.clone();
         let logger_ref = logger.clone();
@@ -52,16 +54,21 @@ fn test_throughput_and_latency(task_size: usize, silent: bool) -> anyhow::Result
     let mut task_groups = Vec::new();
     let writers = num_cpus::get() - 2;
     for _ in 0..writers {
+        // schedule tasks in multiple threads
         task_groups.push(tasks.drain(..task_size / writers).collect::<Vec<_>>());
     }
     task_groups.push(tasks);
 
+    // execute all tasks
     let ret = rt.block_on(join_all(
         task_groups
             .into_iter()
             .map(|group| rt.spawn(futures::future::join_all(group))),
     ));
+
     let total_cost = start.elapsed();
+
+    // collect the latency of each log message
     let mut results = ret
         .into_iter()
         .flatten()

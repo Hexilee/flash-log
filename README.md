@@ -6,7 +6,7 @@ A file-based logger designed for large throughputs.
 
 > make bench
 
-### SSD (~1GiB/s)
+### SSD (~1.1GiB/s)
 
 ```log
 running 1 test
@@ -20,16 +20,16 @@ write 1000.0 MB in 990.51046ms, avg latency: 378.676661ms. 50%(386.271167ms), 90
 test test::test_write_data ... ok
 ```
 
-### HDD (~80MiB/s)
+### HDD (~168MiB/s)
 
 ```log
 running 1 test
-write 1.0 KB in 664.807µs, avg latency: 583.676µs. 50%(583.676µs), 90%(583.676µs), 95%(583.676µs), 99%(583.676µs)
-write 10.0 KB in 2.541953ms, avg latency: 2.241611ms. 50%(2.416371ms), 90%(2.416687ms), 95%(2.416687ms), 99%(2.416687ms)
-write 100.0 KB in 4.35786ms, avg latency: 3.415524ms. 50%(3.196409ms), 90%(4.207333ms), 95%(4.208584ms), 99%(4.209015ms)
-write 1000.0 KB in 14.955566ms, avg latency: 10.321395ms. 50%(9.769522ms), 90%(14.570896ms), 95%(14.62856ms), 99%(14.663165ms)
-write 10.0 MB in 81.033421ms, avg latency: 43.255086ms. 50%(44.586673ms), 90%(71.556125ms), 95%(71.697084ms), 99%(71.926862ms)
-write 100.0 MB in 1.128412082s, avg latency: 560.37788ms. 50%(550.703778ms), 90%(996.703703ms), 95%(1.085464633s), 99%(1.090011378s)
-write 1000.0 MB in 8.150967169s, avg latency: 4.688047606s. 50%(4.976272875s), 90%(7.626309354s), 95%(7.633459285s), 99%(7.891117365s)
+write 1.0 KB in 670.81µs, avg latency: 557.942µs. 50%(557.942µs), 90%(557.942µs), 95%(557.942µs), 99%(557.942µs)
+write 10.0 KB in 1.837829ms, avg latency: 1.36268ms. 50%(1.359492ms), 90%(1.739626ms), 95%(1.739626ms), 99%(1.739626ms)
+write 100.0 KB in 4.88041ms, avg latency: 3.638901ms. 50%(3.443846ms), 90%(4.756498ms), 95%(4.756849ms), 99%(4.762367ms)
+write 1000.0 KB in 15.457012ms, avg latency: 10.004802ms. 50%(9.777296ms), 90%(12.834927ms), 95%(15.083186ms), 99%(15.105382ms)
+write 10.0 MB in 169.356069ms, avg latency: 62.491729ms. 50%(61.214729ms), 90%(102.534186ms), 95%(159.916845ms), 99%(163.656266ms)
+write 100.0 MB in 1.403721103s, avg latency: 729.024237ms. 50%(749.763877ms), 90%(1.301503876s), 95%(1.30613071s), 99%(1.372349294s)
+write 1000.0 MB in 7.176729815s, avg latency: 4.078706759s. 50%(4.235005525s), 90%(6.804786237s), 95%(6.813282432s), 99%(6.93267018s)
 test test::test_write_data ... ok
 ```

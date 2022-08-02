@@ -48,22 +48,28 @@ impl Logger {
         max_buffer_o: Option<usize>,
         avg_msg_size_o: Option<usize>,
     ) -> Result<Self> {
+        // open target file in direct io
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
             .custom_flags(libc::O_DIRECT)
             .open(path)?;
+
+        // if None, set to default values
         let max_buffer = max_buffer_o.unwrap_or(Self::DEFAULT_MAX_BUFFER);
         let avg_msg_size = avg_msg_size_o.unwrap_or(Self::AVG_MSG_SIZE);
+
         let (io_sender, io_receiver) = sync_channel(1000_000);
         let (waker_sender, waker_receiver) = sync_channel::<WakeMessage>(100);
         let waker_sender_ref = waker_sender.clone();
 
+        // a worker to wake up log writer
         let waker_worker = std::thread::spawn(move || {
             while let Ok(msg) = waker_receiver.recv() {
                 match msg {
                     WakeMessage::Exit => break,
                     WakeMessage::Wake(wakers) => {
+                        // wake up all blocked writer
                         for waker in wakers {
                             waker.wake().expect("wake log writer");
                         }
@@ -72,9 +78,15 @@ impl Logger {
             }
         });
 
+        // a worker to write logs in a batch
         let io_worker = std::thread::spawn(move || {
+            // throughput of the last batch
             let mut last_throughput = 0.;
+
+            // the size of a batch, will be updated by the throughput
             let mut batch_size = Self::BLOCK_SIZE;
+
+            // the batch buffer
             let mut batch = vec![];
             loop {
                 let start = Instant::now();
@@ -85,11 +97,18 @@ impl Logger {
                 loop {
                     match io_receiver.try_recv() {
                         Ok(IOMessage::Exit) => return,
+
+                        // no new log in the channel, going to submit a batch
                         Err(TryRecvError::Empty) => break,
                         Ok(IOMessage::Write { data, waker }) => {
                             wakers.push(waker);
                             batch.extend_from_slice(&data);
                             if batch.len() + avg_msg_size > batch_size {
+                                // The next written may exceed the batch size，
+                                // as the batch size should always be the integral multiple of the block size,
+                                // exceeding the batch size will cause a reallocate of memory and an additional block to write
+                                //
+                                // This is a latency optimization for low throughput cases.
                                 break;
                             }
                         }
@@ -98,21 +117,33 @@ impl Logger {
                 }
 
                 if batch.is_empty() {
+                    // no batch to submit, begin a new batch
                     continue;
                 }
 
+                // write a batch to the file
                 file.write_all(&batch).expect("write data failed");
+
+                // data write to disk, going to wake blocked writer
                 waker_sender_ref
                     .send(WakeMessage::Wake(wakers))
                     .expect("waker sender cannot be dropped");
+
+                // the throughput in unit time
                 let throughput = batch.len() as f64 / start.elapsed().as_secs_f64();
+
+                // the throughput errors between the last batch and the current batch
                 let errs = (throughput - last_throughput) / last_throughput;
                 if errs >= 0.1 {
                     batch_size *= 2;
                 } else if errs <= -0.1 {
                     batch_size = batch_size * 3 / 4;
                 }
+
+                // the buffer size cannot exceed the max buffer size
                 let min_buffer_size = max_buffer.min(batch_size);
+
+                // padding the batch size to be integral multiple of the block size
                 let mut blocks = min_buffer_size / Self::BLOCK_SIZE;
                 if min_buffer_size % Self::BLOCK_SIZE > 0 {
                     blocks += 1;
@@ -132,10 +163,14 @@ impl Logger {
 
     pub async fn write_log(&self, data: Bytes) -> Result<()> {
         let (waker, receiver) = oneshot::channel();
+
+        // submit a message to the channel
         let _ = self.io_sender.send(IOMessage::Write {
             data,
             waker: Waker(waker),
         });
+
+        // wait for the message to be written to the file
         receiver
             .await
             .map_err(|e| anyhow!("logger worker thread exit: {}", e))

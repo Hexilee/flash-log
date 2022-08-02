@@ -10,25 +10,27 @@ use crate::Logger;
 
 #[test]
 fn test_write_data() -> anyhow::Result<()> {
-    test_throughput_and_latency(1)?;
-    test_throughput_and_latency(10)?;
-    test_throughput_and_latency(100)?;
-    test_throughput_and_latency(1000)?;
-    test_throughput_and_latency(10_000)?;
-    test_throughput_and_latency(100_000)?;
-    test_throughput_and_latency(1000_000)?;
-    test_throughput_and_latency(10_000_000)?;
+    test_throughput_and_latency(1024, true)?; // warm up
+
+    test_throughput_and_latency(1, false)?;
+    test_throughput_and_latency(10, false)?;
+    test_throughput_and_latency(100, false)?;
+    test_throughput_and_latency(1000, false)?;
+    test_throughput_and_latency(10_000, false)?;
+    test_throughput_and_latency(100_000, false)?;
+    test_throughput_and_latency(1000_000, false)?;
+    // test_throughput_and_latency(10_000_000)?;
     Ok(())
 }
 
-fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
+fn test_throughput_and_latency(task_size: usize, silent: bool) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
-    const MSG_SIZE: usize = 100;
+    const MSG_SIZE: usize = 1000;
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
         .build()?;
 
-    let logger = Arc::new(Logger::open("test.log", None, None)?);
+    let logger = Arc::new(Logger::open("test.log", None, Some(1000))?);
     let mut rng = rand::thread_rng();
     let mut data = vec![0; MSG_SIZE];
 
@@ -49,8 +51,9 @@ fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     let start = Instant::now();
 
     let mut task_groups = Vec::new();
-    for _ in 0..16 {
-        task_groups.push(tasks.drain(..task_size / 16).collect::<Vec<_>>());
+    let writers = num_cpus::get() - 2;
+    for _ in 0..writers {
+        task_groups.push(tasks.drain(..task_size / writers).collect::<Vec<_>>());
     }
     task_groups.push(tasks);
 
@@ -75,15 +78,17 @@ fn test_throughput_and_latency(task_size: usize) -> anyhow::Result<()> {
     assert_eq!(task_size, results.len());
     let avg_latency = results.iter().sum::<Duration>() / results.len() as u32;
 
-    println!(
-        "write {} in {:?}, avg latency: {:?}. 50%({:?}), 90%({:?}), 95%({:?}), 99%({:?})",
-        ByteSize::b((task_size * MSG_SIZE) as u64),
-        total_cost,
-        avg_latency,
-        results[results.len() / 2],
-        results[results.len() * 9 / 10],
-        results[results.len() * 95 / 100],
-        results[results.len() * 99 / 100],
-    );
+    if !silent {
+        println!(
+            "write {} in {:?}, avg latency: {:?}. 50%({:?}), 90%({:?}), 95%({:?}), 99%({:?})",
+            ByteSize::b((task_size * MSG_SIZE) as u64),
+            total_cost,
+            avg_latency,
+            results[results.len() / 2],
+            results[results.len() * 9 / 10],
+            results[results.len() * 95 / 100],
+            results[results.len() * 99 / 100],
+        );
+    }
     Ok(())
 }
